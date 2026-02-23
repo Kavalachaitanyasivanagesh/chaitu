@@ -19,6 +19,7 @@
       font-size:16px;border-radius:10px;border:none;
     }
     button{background:#ff9800;color:#000;font-weight:600}
+    button:disabled{background:#555;color:#222}
     .secondary{background:#333;color:#fff}
     .danger{background:#c62828;color:#fff}
     .card{background:#111;padding:14px;border-radius:14px;margin-bottom:12px}
@@ -49,7 +50,7 @@
   </div>
 
   <div class="card" id="ramaPanel">
-    <h3>Select Sita</h3>
+    <h3>Select Sita (ONE TIME)</h3>
     <div id="playerList"></div>
   </div>
 
@@ -106,7 +107,7 @@ function joinGame(){
   listen();
 }
 
-/* Start game (host only) */
+/* Start Game (HOST ONLY) */
 function startGame(){
   db.ref("hostId").once("value",h=>{
     if(h.val()!==uid) return alert("Only host can start");
@@ -120,9 +121,13 @@ function startGame(){
         const role=roles[i]||roles[roles.length-1];
         db.ref("players/"+id).update({
           role:role.name,
-          roleRewarded:false   // reset per round
+          roleRewarded:false
         });
       });
+
+      // 🔒 reset round locks
+      db.ref("roundLocked").set(false);
+      db.ref("roundScored").set(false);
 
       db.ref("ramaChoice").remove();
       db.ref("timerEnd").set(Date.now()+20000);
@@ -131,9 +136,13 @@ function startGame(){
   });
 }
 
-/* Rama selects */
+/* Rama selects — ONE TIME ONLY */
 function selectSita(id){
-  db.ref("ramaChoice").transaction(v=>v||id);
+  db.ref("roundLocked").transaction(v=>{
+    if(v===true) return;      // already locked
+    db.ref("ramaChoice").set(id);
+    return true;              // lock round
+  });
 }
 
 /* Leave */
@@ -150,14 +159,16 @@ function resetAll(){
   }
 }
 
-/* LISTEN */
+/* LISTENERS */
 function listen(){
 
+  /* Host button */
   db.ref("hostId").on("value",h=>{
     document.getElementById("startBtn").style.display =
       h.val()===uid?"block":"none";
   });
 
+  /* Players */
   db.ref("players").on("value",snap=>{
     const p=snap.val();
     if(!p||!p[uid])return;
@@ -188,44 +199,50 @@ function listen(){
 
       if(left<=0){
         clearInterval(timerInterval);
-        db.ref("ramaChoice").transaction(v=>v||"TIMEOUT");
+        selectSita("TIMEOUT");
       }
     },500);
   });
 
-  /* RESULT + CORRECT SCORING */
+  /* SCORING — ONLY ONCE */
   db.ref("ramaChoice").on("value",snap=>{
     const choice=snap.val();
     if(!choice) return;
 
-    db.ref("players").once("value",ps=>{
-      const players=ps.val();
-      const correct = choice!=="TIMEOUT" && players[choice].role==="sita";
+    db.ref("roundScored").transaction(done=>{
+      if(done===true) return;   // already scored
+      return true;
+    },(err,committed)=>{
+      if(!committed) return;
 
-      for(let id in players){
-        const p=players[id];
-        let add=0;
+      db.ref("players").once("value",ps=>{
+        const players=ps.val();
+        const correct = choice!=="TIMEOUT" && players[choice].role==="sita";
 
-        if(p.role==="rama") add=correct?1000:0;
-        else if(p.role==="sita") add=correct?0:1000;
-        else if(!p.roleRewarded){
-          const r=roles.find(x=>x.name===p.role);
-          add=r?r.score:0;
-          db.ref("players/"+id+"/roleRewarded").set(true);
+        for(let id in players){
+          const p=players[id];
+          let add=0;
+
+          if(p.role==="rama") add=correct?1000:0;
+          else if(p.role==="sita") add=correct?0:1000;
+          else if(!p.roleRewarded){
+            const r=roles.find(x=>x.name===p.role);
+            add=r?r.score:0;
+            db.ref("players/"+id+"/roleRewarded").set(true);
+          }
+
+          if(add>0){
+            db.ref("players/"+id+"/score")
+              .transaction(s=>(s||0)+add);
+          }
         }
 
-        if(add>0){
-          db.ref("players/"+id+"/score")
-            .transaction(s=>(s||0)+add);
-        }
-      }
+        db.ref("status").set(
+          correct?"🏹 Rama found Sita!":"🌸 Rama failed!"
+        );
 
-      db.ref("status").set(
-        correct?"🏹 Rama found Sita!":"🌸 Rama failed!"
-      );
-
-      db.ref("timerEnd").remove();
-      db.ref("ramaChoice").remove();
+        db.ref("timerEnd").remove();
+      });
     });
   });
 
@@ -234,20 +251,25 @@ function listen(){
   });
 }
 
-/* Rama panel */
+/* Rama UI */
 function showRamaPanel(players){
   const panel=document.getElementById("ramaPanel");
   const list=document.getElementById("playerList");
   panel.style.display="block";
   list.innerHTML="";
 
-  for(let id in players){
-    if(id===uid) continue;
-    const b=document.createElement("button");
-    b.innerText=players[id].name;
-    b.onclick=()=>selectSita(id);
-    list.appendChild(b);
-  }
+  db.ref("roundLocked").once("value",lock=>{
+    const disabled = lock.val()===true;
+
+    for(let id in players){
+      if(id===uid) continue;
+      const b=document.createElement("button");
+      b.innerText=players[id].name;
+      b.disabled = disabled;
+      b.onclick=()=>selectSita(id);
+      list.appendChild(b);
+    }
+  });
 }
 </script>
 
