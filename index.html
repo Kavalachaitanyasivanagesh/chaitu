@@ -25,6 +25,7 @@
 
 <div id="game">
   <h3 id="status">Waiting for players…</h3>
+
   <button onclick="startGame()">Start Game</button>
 
   <h3 id="myrole"></h3>
@@ -35,10 +36,12 @@
   </div>
 
   <h3 id="score"></h3>
+
+  <button onclick="leaveGame()">Leave / Reset Me</button>
 </div>
 
 <script>
-/* 🔥 Firebase Config (already correct) */
+/* 🔥 Firebase Config */
 const firebaseConfig = {
   apiKey: "AIzaSyAgW8uCRYRt9vQR59tcZKPZ5frkIdUtzIA",
   authDomain: "ramudu-game.firebaseapp.com",
@@ -56,7 +59,7 @@ const auth = firebase.auth();
 let uid = "";
 let playerName = "";
 
-/* Roles */
+/* Roles list */
 const roles = [
   "rama",
   "sita",
@@ -67,7 +70,7 @@ const roles = [
   "jambavanta"
 ];
 
-/* Login */
+/* Anonymous login */
 auth.signInAnonymously().then(res => {
   uid = res.user.uid;
 });
@@ -114,7 +117,7 @@ function startGame(){
       );
     });
 
-    db.ref("gameStarted").set(true);
+    db.ref("status").set("Roles assigned. Rama, select Sita!");
   });
 }
 
@@ -123,7 +126,7 @@ function selectSita(selectedUid){
   db.ref("ramaChoice").set(selectedUid);
 }
 
-/* Show Rama panel */
+/* Show Rama options */
 function showRamaPanel(players){
   const panel = document.getElementById("ramaPanel");
   const list = document.getElementById("playerList");
@@ -141,7 +144,36 @@ function showRamaPanel(players){
   }
 }
 
-/* Listen to game */
+/* Leave / Reset only this player */
+function leaveGame(){
+  if(!confirm("Leave the game?")) return;
+
+  db.ref("players/" + uid).remove();
+
+  db.ref("ramaChoice").once("value", snap => {
+    if(snap.val() === uid){
+      db.ref("ramaChoice").remove();
+    }
+  });
+
+  document.getElementById("game").style.display = "none";
+  document.getElementById("name").value = "";
+  document.getElementById("myrole").innerText = "";
+  document.getElementById("score").innerHTML = "";
+  document.getElementById("ramaPanel").style.display = "none";
+  document.getElementById("status").innerText = "";
+
+  alert("You left the game. You can join again.");
+}
+
+/* Auto remove player on tab close */
+window.addEventListener("beforeunload", () => {
+  if(uid){
+    db.ref("players/" + uid).remove();
+  }
+});
+
+/* Listen to game updates */
 function listen(){
   db.ref("players").on("value", snap => {
     const players = snap.val();
@@ -175,9 +207,11 @@ function listen(){
 
         if(role === "rama"){
           score = correct ? 1000 : 0;
-        } else if(role === "sita"){
+        }
+        else if(role === "sita"){
           score = correct ? 0 : 1000;
-        } else {
+        }
+        else{
           score = Math.floor(Math.random() * 800) + 100;
         }
 
