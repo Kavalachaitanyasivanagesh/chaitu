@@ -4,29 +4,68 @@
   <title>Ramudu Sita Online Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
   <style>
-    body { font-family: Arial; text-align: center; background: #ffe6cc; }
-    button { padding: 10px 20px; margin: 5px; font-size: 16px; }
-    #game { display: none; margin-top: 20px; }
-    #ramaPanel { display: none; margin-top: 15px; }
+    body{
+      font-family: Arial;
+      text-align: center;
+      background: #000;
+      color: #fff;
+      margin: 0;
+      padding: 20px;
+    }
+    input{
+      padding: 10px;
+      font-size: 16px;
+      margin: 5px;
+    }
+    button{
+      padding: 10px 20px;
+      margin: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background: #ff9800;
+      color: #000;
+    }
+    button:hover{
+      opacity: 0.85;
+    }
+    #game{
+      display: none;
+      margin-top: 20px;
+    }
+    #ramaPanel{
+      display: none;
+      margin-top: 15px;
+    }
+    hr{
+      border: 1px solid #444;
+      margin: 15px 0;
+    }
   </style>
 </head>
 
 <body>
 
-<h2>🎮 Ramudu Sita Online Multiplayer</h2>
+<h2>🎮 Ramudu–Sita Online Multiplayer</h2>
 
 <input id="name" placeholder="Enter your name">
+<br>
 <button onclick="joinGame()">Join Game</button>
 
 <div id="game">
   <h3 id="status">Waiting for players…</h3>
 
   <button onclick="startGame()">Start Game</button>
+  <button onclick="resetAllPlayers()">Reset ALL Players</button>
+
+  <hr>
 
   <h3 id="myrole"></h3>
 
@@ -34,6 +73,8 @@
     <h3>Select Sita</h3>
     <div id="playerList"></div>
   </div>
+
+  <hr>
 
   <h3 id="score"></h3>
 
@@ -59,7 +100,7 @@ const auth = firebase.auth();
 let uid = "";
 let playerName = "";
 
-/* Roles list */
+/* Roles */
 const roles = [
   "rama",
   "sita",
@@ -77,12 +118,12 @@ auth.signInAnonymously().then(res => {
 
 /* Join Game */
 function joinGame(){
-  if(uid === ""){
+  if(!uid){
     alert("Please wait…");
     return;
   }
 
-  playerName = document.getElementById("name").value;
+  playerName = document.getElementById("name").value.trim();
   if(!playerName){
     alert("Enter name");
     return;
@@ -112,12 +153,11 @@ function startGame(){
     const shuffled = [...roles].sort(() => Math.random() - 0.5);
 
     ids.forEach((id, i) => {
-      db.ref("players/" + id + "/role").set(
-        shuffled[i % shuffled.length]
-      );
+      db.ref("players/" + id + "/role")
+        .set(shuffled[i % shuffled.length]);
     });
 
-    db.ref("status").set("Roles assigned. Rama, select Sita!");
+    db.ref("status").set("Roles assigned. Rama, find Sita!");
   });
 }
 
@@ -126,7 +166,7 @@ function selectSita(selectedUid){
   db.ref("ramaChoice").set(selectedUid);
 }
 
-/* Show Rama options */
+/* Show Rama panel */
 function showRamaPanel(players){
   const panel = document.getElementById("ramaPanel");
   const list = document.getElementById("playerList");
@@ -144,17 +184,12 @@ function showRamaPanel(players){
   }
 }
 
-/* Leave / Reset only this player */
+/* Leave / Reset only me */
 function leaveGame(){
   if(!confirm("Leave the game?")) return;
 
   db.ref("players/" + uid).remove();
-
-  db.ref("ramaChoice").once("value", snap => {
-    if(snap.val() === uid){
-      db.ref("ramaChoice").remove();
-    }
-  });
+  db.ref("ramaChoice").remove();
 
   document.getElementById("game").style.display = "none";
   document.getElementById("name").value = "";
@@ -163,17 +198,35 @@ function leaveGame(){
   document.getElementById("ramaPanel").style.display = "none";
   document.getElementById("status").innerText = "";
 
-  alert("You left the game. You can join again.");
+  alert("You left the game.");
 }
 
-/* Auto remove player on tab close */
+/* Reset ALL players */
+function resetAllPlayers(){
+  if(!confirm("Reset ALL players and clear game?")) return;
+
+  db.ref("players").remove();
+  db.ref("ramaChoice").remove();
+  db.ref("status").remove();
+
+  document.getElementById("game").style.display = "none";
+  document.getElementById("name").value = "";
+  document.getElementById("myrole").innerText = "";
+  document.getElementById("score").innerHTML = "";
+  document.getElementById("ramaPanel").style.display = "none";
+  document.getElementById("status").innerText = "";
+
+  alert("All players reset. Everyone must join again.");
+}
+
+/* Auto remove on tab close */
 window.addEventListener("beforeunload", () => {
   if(uid){
     db.ref("players/" + uid).remove();
   }
 });
 
-/* Listen to game updates */
+/* Listen */
 function listen(){
   db.ref("players").on("value", snap => {
     const players = snap.val();
