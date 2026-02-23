@@ -4,35 +4,62 @@
   <title>Ramudu–Sita Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
   <style>
     body{
-      background:#000;color:#fff;font-family:system-ui;
-      padding:16px;display:flex;justify-content:center;
+      margin:0;
+      background:#000;
+      color:#fff;
+      font-family: system-ui, Arial;
+      display:flex;
+      justify-content:center;
     }
-    .app{max-width:420px;width:100%}
+    .app{
+      width:100%;
+      max-width:420px;
+      padding:16px;
+    }
+    h1{text-align:center;margin:10px 0 20px;}
+    .card{
+      background:#111;
+      border-radius:14px;
+      padding:16px;
+      margin-bottom:14px;
+      box-shadow:0 0 0 1px #222;
+    }
     input,button{
-      width:100%;padding:14px;margin:6px 0;
-      font-size:16px;border-radius:10px;border:none;
+      width:100%;
+      padding:14px;
+      font-size:16px;
+      border-radius:12px;
+      border:none;
+      margin-top:8px;
     }
-    button{background:#ff9800;color:#000;font-weight:600}
-    button:disabled{background:#555;color:#222}
-    .secondary{background:#333;color:#fff}
-    .danger{background:#c62828;color:#fff}
-    .card{background:#111;padding:14px;border-radius:14px;margin-bottom:12px}
-    #game{display:none}
-    #ramaPanel{display:none}
-    .timer{color:#ff5252;text-align:center;font-size:18px}
+    button{
+      background:#ff9800;
+      color:#000;
+      font-weight:600;
+      cursor:pointer;
+    }
+    button.secondary{background:#333;color:#fff;}
+    button.danger{background:#c62828;color:#fff;}
+    #game{display:none;}
+    .status{text-align:center;color:#aaa;}
+    .role{text-align:center;font-size:20px;font-weight:700;}
+    .timer{text-align:center;color:#ff5252;font-size:18px;}
+    .player-list button{margin-top:6px;}
+    .sticky{position:sticky;bottom:0;padding-top:10px;background:linear-gradient(transparent,#000 40%);}
   </style>
 </head>
 
 <body>
 <div class="app">
 
-<h2 style="text-align:center">🎮 Ramudu–Sita</h2>
+<h1>🎮 Ramudu–Sita Game</h1>
 
 <div class="card">
   <input id="name" placeholder="Enter your name">
@@ -40,27 +67,34 @@
 </div>
 
 <div id="game">
+
   <div class="card">
-    <div id="status">Waiting for players…</div>
-    <div id="myrole"></div>
+    <div class="status" id="status">Waiting for players…</div>
+    <div class="role" id="myrole"></div>
     <div class="timer" id="timer"></div>
 
-    <button id="startBtn" onclick="startGame()" style="display:none">Start Game</button>
-    <button class="secondary" onclick="resetAll()">Reset All</button>
+    <button onclick="startGame()">Start Game</button>
+    <button class="secondary" onclick="resetAllPlayers()">Reset All</button>
   </div>
 
-  <div class="card" id="ramaPanel">
+  <div class="card" id="ramaPanel" style="display:none">
     <h3>Select Sita (ONE TIME)</h3>
-    <div id="playerList"></div>
+    <div class="player-list" id="playerList"></div>
   </div>
 
-  <div class="card" id="score"></div>
+  <div class="card">
+    <div id="score"></div>
+  </div>
 
-  <button class="danger" onclick="leaveGame()">Leave Game</button>
+  <div class="sticky">
+    <button class="danger" onclick="leaveGame()">Leave Game</button>
+  </div>
+
+</div>
 </div>
 
 <script>
-/* Firebase */
+/* Firebase config */
 const firebaseConfig = {
   apiKey: "AIzaSyAgW8uCRYRt9vQR59tcZKPZ5frkIdUtzIA",
   authDomain: "ramudu-game.firebaseapp.com",
@@ -70,205 +104,154 @@ const firebaseConfig = {
   messagingSenderId: "1024983133761",
   appId: "1:1024983133761:web:bd97cd6a42b09daad260c0"
 };
+
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
 
-let uid="", timerInterval=null;
+let uid="", timerInt=null;
+let selectionLocked=false;
 
-/* Role order */
-const roles = [
-  {name:"rama",score:0},
-  {name:"sita",score:0},
-  {name:"lakshmana",score:900},
-  {name:"hanuman",score:800},
-  {name:"baratha",score:700},
-  {name:"satrugunudu",score:600},
-  {name:"jambavanta",score:500},
-  {name:"sugrivudu",score:400},
-  {name:"vali",score:300}
+/* Role order + scores */
+const roleOrder=[
+ {name:"rama",score:0},
+ {name:"sita",score:0},
+ {name:"lakshmana",score:900},
+ {name:"hanuman",score:800},
+ {name:"baratha",score:700},
+ {name:"satrugunudu",score:600},
+ {name:"jambavanta",score:500},
+ {name:"sugrivudu",score:400},
+ {name:"vali",score:300}
 ];
 
 auth.signInAnonymously().then(r=>uid=r.user.uid);
 
-function shuffle(a){ return [...a].sort(()=>Math.random()-0.5); }
-
-/* Join */
 function joinGame(){
   const name=document.getElementById("name").value.trim();
   if(!name) return alert("Enter name");
 
-  db.ref("players/"+uid).set({
-    name, role:"", score:0, roleRewarded:false
-  });
-
-  db.ref("hostId").transaction(v=>v||uid);
+  db.ref("players/"+uid).set({name,role:"",score:0});
   document.getElementById("game").style.display="block";
   listen();
 }
 
-/* Start Game (HOST ONLY) */
 function startGame(){
-  db.ref("hostId").once("value",h=>{
-    if(h.val()!==uid) return alert("Only host can start");
+  selectionLocked=false;
+  db.ref("players").once("value",snap=>{
+    const players=snap.val();
+    const ids=Object.keys(players||{});
+    if(ids.length<4) return alert("Minimum 4 players required");
 
-    db.ref("players").once("value",snap=>{
-      const players=snap.val();
-      const ids=shuffle(Object.keys(players||{}));
-      if(ids.length<4) return alert("Minimum 4 players");
-
-      ids.forEach((id,i)=>{
-        const role=roles[i]||roles[roles.length-1];
-        db.ref("players/"+id).update({
-          role:role.name,
-          roleRewarded:false
-        });
-      });
-
-      // 🔒 reset round locks
-      db.ref("roundLocked").set(false);
-      db.ref("roundScored").set(false);
-
-      db.ref("ramaChoice").remove();
-      db.ref("timerEnd").set(Date.now()+20000);
-      db.ref("status").set("Roles assigned. Rama, choose Sita!");
+    ids.forEach((id,i)=>{
+      const role=roleOrder[i]||roleOrder[roleOrder.length-1];
+      db.ref("players/"+id+"/role").set(role.name);
     });
+
+    db.ref("status").set("Roles assigned. Rama, choose Sita!");
+    startTimer();
   });
 }
 
-/* Rama selects — ONE TIME ONLY */
+function startTimer(){
+  let t=20;
+  db.ref("timer").set(t);
+  timerInt=setInterval(()=>{
+    t--;
+    db.ref("timer").set(t);
+    if(t<=0){
+      clearInterval(timerInt);
+      lockSelection();
+      db.ref("ramaChoice").set("TIMEOUT");
+    }
+  },1000);
+}
+
 function selectSita(id){
-  db.ref("roundLocked").transaction(v=>{
-    if(v===true) return;      // already locked
-    db.ref("ramaChoice").set(id);
-    return true;              // lock round
-  });
+  if(selectionLocked) return;
+  lockSelection();
+  clearInterval(timerInt);
+  db.ref("ramaChoice").set(id);
 }
 
-/* Leave */
+function lockSelection(){
+  selectionLocked=true;
+  document.getElementById("ramaPanel").style.display="none";
+}
+
 function leaveGame(){
   db.ref("players/"+uid).remove();
   location.reload();
 }
 
-/* Reset */
-function resetAll(){
+function resetAllPlayers(){
   if(confirm("Reset all players?")){
     db.ref().remove();
     location.reload();
   }
 }
 
-/* LISTENERS */
 function listen(){
-
-  /* Host button */
-  db.ref("hostId").on("value",h=>{
-    document.getElementById("startBtn").style.display =
-      h.val()===uid?"block":"none";
-  });
-
-  /* Players */
   db.ref("players").on("value",snap=>{
     const p=snap.val();
     if(!p||!p[uid])return;
 
-    const myRole=p[uid].role;
-    document.getElementById("myrole").innerText =
-      myRole?"You are: "+myRole.toUpperCase():"";
+    document.getElementById("myrole").innerText="You are: "+p[uid].role.toUpperCase();
 
-    if(myRole==="rama") showRamaPanel(p);
-    else document.getElementById("ramaPanel").style.display="none";
-
-    let txt="🏆 Total Scores<br>";
+    let txt="";
     for(let id in p){
       txt+=`${p[id].name} : ${p[id].score}<br>`;
     }
     document.getElementById("score").innerHTML=txt;
-  });
 
-  /* Timer */
-  db.ref("timerEnd").on("value",snap=>{
-    clearInterval(timerInterval);
-    if(!snap.val()){document.getElementById("timer").innerText="";return;}
+    if(p[uid].role==="rama" && !selectionLocked){
+      const panel=document.getElementById("ramaPanel");
+      const list=document.getElementById("playerList");
+      panel.style.display="block";
+      list.innerHTML=""; // 🔴 FIX: clear duplicates
 
-    timerInterval=setInterval(()=>{
-      const left=Math.max(0,Math.ceil((snap.val()-Date.now())/1000));
-      document.getElementById("timer").innerText=
-        left>0?"⏱ "+left+"s":"";
-
-      if(left<=0){
-        clearInterval(timerInterval);
-        selectSita("TIMEOUT");
+      for(let id in p){
+        if(id===uid) continue;
+        const b=document.createElement("button");
+        b.innerText=p[id].name;
+        b.onclick=()=>selectSita(id);
+        list.appendChild(b);
       }
-    },500);
+    }
   });
 
-  /* SCORING — ONLY ONCE */
+  db.ref("timer").on("value",s=>{
+    document.getElementById("timer").innerText=
+      s.val()!=null?`⏱ ${s.val()}s left`:"";
+  });
+
   db.ref("ramaChoice").on("value",snap=>{
     const choice=snap.val();
-    if(!choice) return;
+    if(!choice)return;
 
-    db.ref("roundScored").transaction(done=>{
-      if(done===true) return;   // already scored
-      return true;
-    },(err,committed)=>{
-      if(!committed) return;
+    db.ref("players").once("value",ps=>{
+      const players=ps.val();
+      const correct=choice!=="TIMEOUT" && players[choice].role==="sita";
 
-      db.ref("players").once("value",ps=>{
-        const players=ps.val();
-        const correct = choice!=="TIMEOUT" && players[choice].role==="sita";
-
-        for(let id in players){
-          const p=players[id];
-          let add=0;
-
-          if(p.role==="rama") add=correct?1000:0;
-          else if(p.role==="sita") add=correct?0:1000;
-          else if(!p.roleRewarded){
-            const r=roles.find(x=>x.name===p.role);
-            add=r?r.score:0;
-            db.ref("players/"+id+"/roleRewarded").set(true);
-          }
-
-          if(add>0){
-            db.ref("players/"+id+"/score")
-              .transaction(s=>(s||0)+add);
-          }
+      for(let id in players){
+        let role=players[id].role,score=0;
+        if(role==="rama") score=correct?1000:0;
+        else if(role==="sita") score=correct?0:1000;
+        else{
+          const r=roleOrder.find(x=>x.name===role);
+          score=r?r.score:0;
         }
+        db.ref("players/"+id+"/score").set(score);
+      }
 
-        db.ref("status").set(
-          correct?"🏹 Rama found Sita!":"🌸 Rama failed!"
-        );
-
-        db.ref("timerEnd").remove();
-      });
+      db.ref("status").set(correct?"🏹 Rama found Sita!":"🌸 Rama failed!");
+      db.ref("timer").remove();
+      db.ref("ramaChoice").remove();
     });
   });
 
   db.ref("status").on("value",s=>{
     if(s.val()) document.getElementById("status").innerText=s.val();
-  });
-}
-
-/* Rama UI */
-function showRamaPanel(players){
-  const panel=document.getElementById("ramaPanel");
-  const list=document.getElementById("playerList");
-  panel.style.display="block";
-  list.innerHTML="";
-
-  db.ref("roundLocked").once("value",lock=>{
-    const disabled = lock.val()===true;
-
-    for(let id in players){
-      if(id===uid) continue;
-      const b=document.createElement("button");
-      b.innerText=players[id].name;
-      b.disabled = disabled;
-      b.onclick=()=>selectSita(id);
-      list.appendChild(b);
-    }
   });
 }
 </script>
