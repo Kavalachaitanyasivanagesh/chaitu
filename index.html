@@ -10,183 +10,75 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
   <style>
-    :root{
-      --bg:#000;
-      --card:#111;
-      --accent:#ff9800;
-      --text:#fff;
-      --muted:#aaa;
-    }
-
-    *{
-      box-sizing:border-box;
-      -webkit-tap-highlight-color: transparent;
-    }
-
     body{
+      background:#000;
+      color:#fff;
+      font-family:system-ui,Arial;
       margin:0;
-      background:var(--bg);
-      color:var(--text);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      padding:16px;
       display:flex;
       justify-content:center;
     }
-
-    .app{
-      width:100%;
-      max-width:420px;
-      padding:16px;
-    }
-
-    h1{
-      text-align:center;
-      margin:10px 0 20px;
-      font-size:22px;
-    }
-
-    .card{
-      background:var(--card);
-      border-radius:14px;
-      padding:16px;
-      margin-bottom:14px;
-      box-shadow:0 0 0 1px #222;
-    }
-
-    input{
+    .app{width:100%;max-width:420px}
+    h1{text-align:center}
+    input,button{
       width:100%;
       padding:14px;
+      margin:6px 0;
       font-size:16px;
       border-radius:10px;
       border:none;
-      outline:none;
-      margin-bottom:12px;
     }
-
     button{
-      width:100%;
-      padding:14px;
-      font-size:16px;
-      border:none;
-      border-radius:12px;
-      background:var(--accent);
+      background:#ff9800;
       color:#000;
       font-weight:600;
-      cursor:pointer;
-      margin-top:8px;
     }
-
-    button.secondary{
-      background:#333;
-      color:#fff;
+    .secondary{background:#333;color:#fff}
+    .danger{background:#c62828;color:#fff}
+    .card{
+      background:#111;
+      padding:14px;
+      border-radius:14px;
+      margin-bottom:12px;
     }
-
-    button.danger{
-      background:#c62828;
-      color:#fff;
-    }
-
-    .row{
-      display:flex;
-      gap:10px;
-    }
-
-    .row button{
-      flex:1;
-    }
-
-    #game{ display:none; }
-
-    .status{
-      text-align:center;
-      font-size:15px;
-      color:var(--muted);
-      margin-bottom:10px;
-    }
-
-    .role{
-      text-align:center;
-      font-size:20px;
-      font-weight:700;
-      margin:10px 0;
-    }
-
-    .timer{
-      text-align:center;
-      font-size:18px;
-      color:#ff5252;
-      margin-bottom:10px;
-    }
-
-    .player-list button{
-      margin-top:6px;
-    }
-
-    .scores{
-      font-size:14px;
-      line-height:1.6;
-      margin-top:10px;
-    }
-
-    /* Sticky bottom actions (mobile friendly) */
-    .sticky{
-      position:sticky;
-      bottom:0;
-      background:linear-gradient(transparent, #000 40%);
-      padding-top:10px;
-    }
-
-    @media (min-width:768px){
-      h1{ font-size:26px; }
-    }
+    #game{display:none}
+    #ramaPanel{display:none}
+    .timer{color:#ff5252;font-size:18px;text-align:center}
   </style>
 </head>
 
 <body>
 <div class="app">
 
-  <h1>🎮 Ramudu–Sita Game</h1>
+<h1>🎮 Ramudu–Sita</h1>
 
-  <!-- JOIN -->
+<div class="card">
+  <input id="name" placeholder="Enter your name">
+  <button onclick="joinGame()">Join Game</button>
+</div>
+
+<div id="game">
   <div class="card">
-    <input id="name" placeholder="Enter your name">
-    <button onclick="joinGame()">Join Game</button>
+    <div id="status">Waiting for players…</div>
+    <div id="myrole"></div>
+    <div class="timer" id="timer"></div>
+    <button onclick="startGame()">Start Game</button>
+    <button class="secondary" onclick="resetAll()">Reset All</button>
   </div>
 
-  <!-- GAME -->
-  <div id="game">
-
-    <div class="card">
-      <div class="status" id="status">Waiting for players…</div>
-      <div class="role" id="myrole"></div>
-      <div class="timer" id="timer"></div>
-
-      <div class="row">
-        <button onclick="startGame()">Start Game</button>
-        <button class="secondary" onclick="resetAllPlayers()">Reset All</button>
-      </div>
-    </div>
-
-    <!-- Rama Panel -->
-    <div class="card" id="ramaPanel" style="display:none">
-      <h3 style="margin-top:0">Select Sita</h3>
-      <div class="player-list" id="playerList"></div>
-    </div>
-
-    <!-- Scores -->
-    <div class="card">
-      <div class="scores" id="score"></div>
-    </div>
-
-    <!-- Bottom actions -->
-    <div class="sticky">
-      <button class="danger" onclick="leaveGame()">Leave Game</button>
-    </div>
-
+  <div class="card" id="ramaPanel">
+    <h3>Select Sita</h3>
+    <div id="playerList"></div>
   </div>
+
+  <div class="card" id="score"></div>
+
+  <button class="danger" onclick="leaveGame()">Leave Game</button>
 </div>
 
 <script>
-/* Firebase config */
+/* Firebase */
 const firebaseConfig = {
   apiKey: "AIzaSyAgW8uCRYRt9vQR59tcZKPZ5frkIdUtzIA",
   authDomain: "ramudu-game.firebaseapp.com",
@@ -196,15 +88,14 @@ const firebaseConfig = {
   messagingSenderId: "1024983133761",
   appId: "1:1024983133761:web:bd97cd6a42b09daad260c0"
 };
-
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
 
-let uid="", playerName="", timerInt=null;
+let uid="", timerInterval=null;
 
-/* Role order */
-const roleOrder = [
+/* Fixed role order */
+const roles = [
   {name:"rama",score:0},
   {name:"sita",score:0},
   {name:"lakshmana",score:900},
@@ -216,76 +107,77 @@ const roleOrder = [
   {name:"vali",score:300}
 ];
 
+/* Auth */
 auth.signInAnonymously().then(r=>uid=r.user.uid);
 
-function joinGame(){
-  playerName=document.getElementById("name").value.trim();
-  if(!playerName) return alert("Enter name");
+/* Utils */
+function shuffle(arr){
+  return arr.sort(()=>Math.random()-0.5);
+}
 
-  db.ref("players/"+uid).set({name:playerName,role:"",score:0});
+/* Join */
+function joinGame(){
+  const name=document.getElementById("name").value.trim();
+  if(!name) return alert("Enter name");
+
+  db.ref("players/"+uid).set({name,role:"",score:0});
   document.getElementById("game").style.display="block";
   listen();
 }
 
+/* Start Game */
 function startGame(){
   db.ref("players").once("value",snap=>{
     const players=snap.val();
     const ids=Object.keys(players||{});
-    if(ids.length<4) return alert("Minimum 4 players required");
+    if(ids.length<4) return alert("Minimum 4 players");
 
-    ids.forEach((id,i)=>{
-      const role=roleOrder[i]||roleOrder[roleOrder.length-1];
+    const shuffledPlayers=shuffle([...ids]);
+
+    shuffledPlayers.forEach((id,i)=>{
+      const role=roles[i]||roles[roles.length-1];
       db.ref("players/"+id+"/role").set(role.name);
     });
 
-    db.ref("status").set("Roles assigned. Rama, choose fast!");
-    startTimer();
+    const endTime=Date.now()+20000;
+    db.ref("timerEnd").set(endTime);
+    db.ref("status").set("Roles assigned. Rama, choose Sita!");
   });
 }
 
-function startTimer(){
-  let t=20;
-  db.ref("timer").set(t);
-  timerInt=setInterval(()=>{
-    t--;
-    db.ref("timer").set(t);
-    if(t<=0){
-      clearInterval(timerInt);
-      db.ref("ramaChoice").set("TIMEOUT");
-    }
-  },1000);
-}
-
+/* Rama chooses */
 function selectSita(id){
-  clearInterval(timerInt);
   db.ref("ramaChoice").set(id);
 }
 
+/* Leave */
 function leaveGame(){
   db.ref("players/"+uid).remove();
   location.reload();
 }
 
-function resetAllPlayers(){
+/* Reset All */
+function resetAll(){
   if(confirm("Reset all players?")){
     db.ref().remove();
     location.reload();
   }
 }
 
+/* Listen */
 function listen(){
   db.ref("players").on("value",snap=>{
     const p=snap.val();
     if(!p||!p[uid])return;
 
-    document.getElementById("myrole").innerText =
+    document.getElementById("myrole").innerText=
       "You are: "+p[uid].role.toUpperCase();
 
-    let txt="";
+    let scoreTxt="🏆 Scores<br>";
     for(let id in p){
-      txt+=`${p[id].name} : ${p[id].score}<br>`;
+      scoreTxt+=`${p[id].name} : ${p[id].score}<br>`;
     }
-    document.getElementById("score").innerHTML=txt;
+    document.getElementById("score").innerHTML=scoreTxt;
 
     if(p[uid].role==="rama"){
       document.getElementById("ramaPanel").style.display="block";
@@ -301,11 +193,24 @@ function listen(){
     }
   });
 
-  db.ref("timer").on("value",s=>{
-    if(s.val()!=null)
-      document.getElementById("timer").innerText="⏱ "+s.val()+"s left";
+  /* Accurate timer */
+  db.ref("timerEnd").on("value",snap=>{
+    if(!snap.val())return;
+    clearInterval(timerInterval);
+
+    timerInterval=setInterval(()=>{
+      const remaining=Math.max(0,Math.ceil((snap.val()-Date.now())/1000));
+      document.getElementById("timer").innerText=
+        remaining>0 ? "⏱ "+remaining+"s" : "";
+
+      if(remaining<=0){
+        clearInterval(timerInterval);
+        db.ref("ramaChoice").set("TIMEOUT");
+      }
+    },500);
   });
 
+  /* Result */
   db.ref("ramaChoice").on("value",snap=>{
     const choice=snap.val();
     if(!choice)return;
@@ -315,16 +220,15 @@ function listen(){
       const correct = choice!=="TIMEOUT" && players[choice].role==="sita";
 
       for(let id in players){
-        let role=players[id].role;
         let score=0;
+        const role=players[id].role;
 
         if(role==="rama") score=correct?1000:0;
         else if(role==="sita") score=correct?0:1000;
         else{
-          const r=roleOrder.find(r=>r.name===role);
+          const r=roles.find(x=>x.name===role);
           score=r?r.score:0;
         }
-
         db.ref("players/"+id+"/score").set(score);
       }
 
@@ -333,13 +237,12 @@ function listen(){
       );
 
       db.ref("ramaChoice").remove();
-      db.ref("timer").remove();
+      db.ref("timerEnd").remove();
     });
   });
 
   db.ref("status").on("value",s=>{
-    if(s.val())
-      document.getElementById("status").innerText=s.val();
+    if(s.val()) document.getElementById("status").innerText=s.val();
   });
 }
 </script>
