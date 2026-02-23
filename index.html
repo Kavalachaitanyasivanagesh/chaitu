@@ -1,109 +1,96 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Online Ramudu Sita Game</title>
+  <title>Ramudu Sita Online Game</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-<style>
-body{font-family:Arial;text-align:center;background:#f4f6fb;}
-input,button{padding:10px;margin:5px;font-size:16px;}
-button{
- background:#4CAF50;
- color:white;
- border:none;
- border-radius:8px;
-}
-#role{font-size:26px;margin-top:20px;}
-</style>
+  <style>
+    body{font-family:Arial;text-align:center;background:#ffe6cc}
+    button{padding:10px 20px;margin:5px;font-size:16px}
+    #game{display:none;margin-top:20px}
+  </style>
 </head>
 
 <body>
 
-<h2>Online Ramudu–Sita Game</h2>
+<h2>🎮 Ramudu Sita Online Multiplayer</h2>
 
-<div id="join">
 <input id="name" placeholder="Enter your name">
-<button onclick="join()">Join Game</button>
+<button onclick="joinGame()">Join Game</button>
+
+<div id="game">
+  <h3 id="status"></h3>
+  <button onclick="choose('rama')">I am Rama</button>
+  <button onclick="choose('sita')">I am Sita</button>
+  <h3 id="score"></h3>
 </div>
-
-<div id="game" style="display:none;">
-<button onclick="reveal()">Reveal My Role</button>
-<div id="role"></div>
-
-<br>
-<button onclick="guess()">I am Rama — Guess Sita</button>
-</div>
-
-<!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js"></script>
 
 <script>
-// 🔴 REPLACE WITH YOUR FIREBASE CONFIG
+/* 🔴 PASTE YOUR FIREBASE CONFIG HERE */
 const firebaseConfig = {
-  apiKey: "YOUR_KEY",
-  authDomain: "YOUR_DOMAIN",
-  databaseURL: "YOUR_DB_URL",
-  projectId: "YOUR_ID",
-  storageBucket: "YOUR_BUCKET",
-  messagingSenderId: "YOUR_SENDER",
-  appId: "YOUR_APPID"
+  apiKey: "PASTE",
+  authDomain: "PASTE",
+  databaseURL: "PASTE",
+  projectId: "PASTE",
+  appId: "PASTE"
 };
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 let playerName="";
-let myRole="";
+let role="";
 
-const roles=["Rama","Sita","Hanuman","Lakshmana","Sugriva","Vibhishana"];
-
-function join(){
+function joinGame(){
   playerName=document.getElementById("name").value;
   if(!playerName) return alert("Enter name");
 
-  db.ref("players/"+playerName).set({
-    role:"",
-    score:0
+  document.getElementById("game").style.display="block";
+  document.getElementById("status").innerText="Waiting for players...";
+
+  db.ref("players/"+playerName).set({score:0});
+  listen();
+}
+
+function choose(r){
+  role=r;
+  db.ref("round/"+playerName).set(role);
+}
+
+function listen(){
+  db.ref("round").on("value",snap=>{
+    const data=snap.val();
+    if(!data) return;
+
+    const roles=Object.values(data);
+
+    if(roles.includes("rama") && roles.includes("sita")){
+      let rama=Object.keys(data).find(k=>data[k]=="rama");
+      let sita=Object.keys(data).find(k=>data[k]=="sita");
+
+      let winner=Math.random()>0.5?"rama":"sita";
+
+      if(winner=="rama"){
+        db.ref("players/"+rama+"/score").transaction(s=>(s||0)+1000);
+        document.getElementById("status").innerText="🏹 Rama found Sita!";
+      }else{
+        db.ref("players/"+sita+"/score").transaction(s=>(s||0)+1000);
+        document.getElementById("status").innerText="🌸 Sita escaped!";
+      }
+
+      db.ref("round").remove();
+    }
   });
 
-  document.getElementById("join").style.display="none";
-  document.getElementById("game").style.display="block";
-}
-
-function reveal(){
-  if(myRole) return;
-
-  const r=roles[Math.floor(Math.random()*roles.length)];
-  myRole=r;
-
-  db.ref("players/"+playerName+"/role").set(r);
-
-  document.getElementById("role").innerHTML="You are: <b>"+r+"</b>";
-}
-
-function guess(){
-  if(myRole!=="Rama") return alert("Only Rama can guess!");
-
-  db.ref("players").once("value",snap=>{
-    let players=snap.val();
-    let sitaPlayer=null;
-
-    for(let p in players){
-      if(players[p].role==="Sita"){
-        sitaPlayer=p;
-      }
+  db.ref("players").on("value",snap=>{
+    const data=snap.val();
+    let txt="🏆 Scores<br>";
+    for(let p in data){
+      txt+=p+" : "+data[p].score+"<br>";
     }
-
-    let guess=prompt("Enter who you think is Sita:");
-
-    if(guess===sitaPlayer){
-      db.ref("players/"+playerName+"/score").transaction(s=>(s||0)+1000);
-      alert("Correct! Rama gets 1000");
-    }else{
-      db.ref("players/"+sitaPlayer+"/score").transaction(s=>(s||0)+1000);
-      alert("Wrong! Sita gets 1000");
-    }
+    document.getElementById("score").innerHTML=txt;
   });
 }
 </script>
