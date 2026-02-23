@@ -2,16 +2,17 @@
 <html>
 <head>
   <title>Ramudu Sita Online Game</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
   <style>
-    body{font-family:Arial;text-align:center;background:#ffe6cc}
-    button{padding:10px 20px;margin:5px;font-size:16px}
-    #game{display:none;margin-top:20px}
+    body { font-family: Arial; text-align: center; background: #ffe6cc; }
+    button { padding: 10px 20px; margin: 5px; font-size: 16px; }
+    #game { display: none; margin-top: 20px; }
+    #ramaPanel { display: none; margin-top: 15px; }
   </style>
 </head>
 
@@ -23,15 +24,22 @@
 <button onclick="joinGame()">Join Game</button>
 
 <div id="game">
-  <h3 id="status"></h3>
-  <button onclick="choose('rama')">I am Rama</button>
-  <button onclick="choose('sita')">I am Sita</button>
+  <h3 id="status">Waiting for players…</h3>
+  <button onclick="startGame()">Start Game</button>
+
+  <h3 id="myrole"></h3>
+
+  <div id="ramaPanel">
+    <h3>Select Sita</h3>
+    <div id="playerList"></div>
+  </div>
+
   <h3 id="score"></h3>
 </div>
 
 <script>
-/* 🔴 REPLACE WITH YOUR REAL FIREBASE CONFIG */
-  const firebaseConfig = {
+/* 🔥 Firebase Config (already correct) */
+const firebaseConfig = {
   apiKey: "AIzaSyAgW8uCRYRt9vQR59tcZKPZ5frkIdUtzIA",
   authDomain: "ramudu-game.firebaseapp.com",
   databaseURL: "https://ramudu-game-default-rtdb.firebaseio.com",
@@ -47,20 +55,27 @@ const auth = firebase.auth();
 
 let uid = "";
 let playerName = "";
-let role = "";
 
-/* ✅ Anonymous login */
-auth.signInAnonymously()
-  .then(result => {
-    uid = result.user.uid;
-    console.log("Logged in:", uid);
-  })
-  .catch(err => alert(err.message));
+/* Roles */
+const roles = [
+  "rama",
+  "sita",
+  "hanuma",
+  "lakshmana",
+  "bharatha",
+  "sugriva",
+  "jambavanta"
+];
 
-/* ✅ Join game */
+/* Login */
+auth.signInAnonymously().then(res => {
+  uid = res.user.uid;
+});
+
+/* Join Game */
 function joinGame(){
   if(uid === ""){
-    alert("Please wait… connecting");
+    alert("Please wait…");
     return;
   }
 
@@ -70,58 +85,117 @@ function joinGame(){
     return;
   }
 
-  document.getElementById("game").style.display = "block";
-  document.getElementById("status").innerText = "Waiting for players...";
-
   db.ref("players/" + uid).set({
     name: playerName,
+    role: "",
     score: 0
   });
 
+  document.getElementById("game").style.display = "block";
   listen();
 }
 
-/* ✅ Choose role */
-function choose(r){
-  role = r;
-  db.ref("round/" + uid).set(role);
+/* Start Game */
+function startGame(){
+  db.ref("players").once("value", snap => {
+    const players = snap.val();
+    const ids = Object.keys(players || {});
+
+    if(ids.length < 4){
+      alert("Minimum 4 players required");
+      return;
+    }
+
+    const shuffled = [...roles].sort(() => Math.random() - 0.5);
+
+    ids.forEach((id, i) => {
+      db.ref("players/" + id + "/role").set(
+        shuffled[i % shuffled.length]
+      );
+    });
+
+    db.ref("gameStarted").set(true);
+  });
 }
 
-/* ✅ Game logic */
+/* Rama selects Sita */
+function selectSita(selectedUid){
+  db.ref("ramaChoice").set(selectedUid);
+}
+
+/* Show Rama panel */
+function showRamaPanel(players){
+  const panel = document.getElementById("ramaPanel");
+  const list = document.getElementById("playerList");
+
+  panel.style.display = "block";
+  list.innerHTML = "";
+
+  for(let id in players){
+    if(id === uid) continue;
+
+    const btn = document.createElement("button");
+    btn.innerText = players[id].name;
+    btn.onclick = () => selectSita(id);
+    list.appendChild(btn);
+  }
+}
+
+/* Listen to game */
 function listen(){
-  db.ref("round").on("value", snap => {
-    const data = snap.val();
-    if(!data) return;
+  db.ref("players").on("value", snap => {
+    const players = snap.val();
+    if(!players || !players[uid]) return;
 
-    const roles = Object.values(data);
+    document.getElementById("myrole").innerText =
+      "Your role: " + players[uid].role.toUpperCase();
 
-    if(roles.includes("rama") && roles.includes("sita")){
-      const ramaUid = Object.keys(data).find(k => data[k] === "rama");
-      const sitaUid = Object.keys(data).find(k => data[k] === "sita");
+    let txt = "🏆 Scores<br>";
+    for(let p in players){
+      txt += players[p].name + " : " + players[p].score + "<br>";
+    }
+    document.getElementById("score").innerHTML = txt;
 
-      const winner = Math.random() > 0.5 ? "rama" : "sita";
-
-      if(winner === "rama"){
-        db.ref("players/" + ramaUid + "/score")
-          .transaction(s => (s || 0) + 1000);
-        document.getElementById("status").innerText = "🏹 Rama found Sita!";
-      } else {
-        db.ref("players/" + sitaUid + "/score")
-          .transaction(s => (s || 0) + 1000);
-        document.getElementById("status").innerText = "🌸 Sita escaped!";
-      }
-
-      db.ref("round").remove();
+    if(players[uid].role === "rama"){
+      showRamaPanel(players);
     }
   });
 
-  db.ref("players").on("value", snap => {
-    const data = snap.val();
-    let txt = "🏆 Scores<br>";
-    for(let p in data){
-      txt += data[p].name + " : " + data[p].score + "<br>";
+  db.ref("ramaChoice").on("value", snap => {
+    const chosen = snap.val();
+    if(!chosen) return;
+
+    db.ref("players").once("value", psnap => {
+      const players = psnap.val();
+      const correct = players[chosen].role === "sita";
+
+      for(let id in players){
+        let score = 0;
+        const role = players[id].role;
+
+        if(role === "rama"){
+          score = correct ? 1000 : 0;
+        } else if(role === "sita"){
+          score = correct ? 0 : 1000;
+        } else {
+          score = Math.floor(Math.random() * 800) + 100;
+        }
+
+        db.ref("players/" + id + "/score").set(score);
+      }
+
+      db.ref("status").set(
+        correct ? "🏹 Rama found Sita!" : "🌸 Rama failed to find Sita!"
+      );
+
+      db.ref("ramaChoice").remove();
+    });
+  });
+
+  db.ref("status").on("value", snap => {
+    if(snap.val()){
+      document.getElementById("status").innerText = snap.val();
     }
-    document.getElementById("score").innerHTML = txt;
   });
 }
 </script>
