@@ -4,6 +4,7 @@
   <title>Ramudu–Sita Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -52,7 +53,8 @@
     <div id="myrole"></div>
     <div class="timer" id="timer"></div>
 
-    <button onclick="startGame()">Start Game</button>
+    <!-- Host only -->
+    <button id="startBtn" onclick="startGame()" style="display:none">Start Game</button>
     <button class="secondary" onclick="resetAll()">Reset All</button>
   </div>
 
@@ -81,10 +83,9 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
 
-let uid = "";
-let timerInterval = null;
+let uid="", timerInterval=null;
 
-/* Role order */
+/* Role order & base scores */
 const roles = [
   {name:"rama",score:0},
   {name:"sita",score:0},
@@ -98,51 +99,52 @@ const roles = [
 ];
 
 /* Auth */
-auth.signInAnonymously().then(r => uid = r.user.uid);
+auth.signInAnonymously().then(r=>uid=r.user.uid);
 
 /* Utils */
-function shuffle(a){
-  return [...a].sort(()=>Math.random()-0.5);
-}
+function shuffle(a){ return [...a].sort(()=>Math.random()-0.5); }
 
-/* Join */
+/* Join Game */
 function joinGame(){
-  const name = document.getElementById("name").value.trim();
+  const name=document.getElementById("name").value.trim();
   if(!name) return alert("Enter name");
 
-  db.ref("players/"+uid).set({name, role:"", score:0});
+  const ref=db.ref("players/"+uid);
+  ref.set({name,role:"",score:0});
+
+  // Set host only if not exists
+  db.ref("hostId").transaction(v=>v||uid);
+
   document.getElementById("game").style.display="block";
   listen();
 }
 
-/* Start Game (ONLY HOST starts timer) */
+/* Start Game (HOST ONLY) */
 function startGame(){
-  db.ref("players").once("value", snap => {
-    const players = snap.val();
-    const ids = Object.keys(players || {});
-    if(ids.length < 4) return alert("Minimum 4 players");
+  db.ref("hostId").once("value",h=>{
+    if(h.val()!==uid) return alert("Only host can start");
 
-    const shuffled = shuffle(ids);
+    db.ref("players").once("value",snap=>{
+      const players=snap.val();
+      const ids=Object.keys(players||{});
+      if(ids.length<4) return alert("Minimum 4 players");
 
-    shuffled.forEach((id,i)=>{
-      const role = roles[i] || roles[roles.length-1];
-      db.ref("players/"+id+"/role").set(role.name);
-    });
+      const shuffled=shuffle(ids);
+      shuffled.forEach((id,i)=>{
+        const role=roles[i]||roles[roles.length-1];
+        db.ref("players/"+id+"/role").set(role.name);
+      });
 
-    // Host = first player only
-    if(shuffled[0] === uid){
-      const end = Date.now() + 20000;
-      db.ref("timerEnd").set(end);
       db.ref("ramaChoice").remove();
-    }
-
-    db.ref("status").set("Roles assigned. Rama, choose Sita!");
+      db.ref("timerEnd").set(Date.now()+20000);
+      db.ref("status").set("Roles assigned. Rama, choose Sita!");
+    });
   });
 }
 
 /* Rama selects */
 function selectSita(id){
-  db.ref("ramaChoice").transaction(v => v ? v : id);
+  db.ref("ramaChoice").transaction(v=>v||id);
 }
 
 /* Leave */
@@ -151,7 +153,7 @@ function leaveGame(){
   location.reload();
 }
 
-/* Reset */
+/* Reset All */
 function resetAll(){
   if(confirm("Reset all players?")){
     db.ref().remove();
@@ -159,78 +161,79 @@ function resetAll(){
   }
 }
 
-/* LISTENERS */
+/* LISTEN */
 function listen(){
 
+  /* Host button visibility */
+  db.ref("hostId").on("value",h=>{
+    document.getElementById("startBtn").style.display =
+      h.val()===uid ? "block" : "none";
+  });
+
   /* Players */
-  db.ref("players").on("value", snap => {
-    const p = snap.val();
-    if(!p || !p[uid]) return;
+  db.ref("players").on("value",snap=>{
+    const p=snap.val();
+    if(!p||!p[uid])return;
 
-    const myRole = p[uid].role;
-    document.getElementById("myrole").innerText =
-      myRole ? "You are: " + myRole.toUpperCase() : "";
+    const myRole=p[uid].role;
+    document.getElementById("myrole").innerText=
+      myRole ? "You are: "+myRole.toUpperCase() : "";
 
-    // 🔥 FIX: ALWAYS HIDE Rama panel unless role === rama
-    if(myRole === "rama"){
-      showRamaPanel(p);
-    }else{
-      document.getElementById("ramaPanel").style.display="none";
-    }
+    // Rama UI
+    if(myRole==="rama") showRamaPanel(p);
+    else document.getElementById("ramaPanel").style.display="none";
 
-    let txt="🏆 Scores<br>";
+    let txt="🏆 Total Scores<br>";
     for(let id in p){
       txt+=`${p[id].name} : ${p[id].score}<br>`;
     }
-    document.getElementById("score").innerHTML = txt;
+    document.getElementById("score").innerHTML=txt;
   });
 
-  /* Accurate timer (READ ONLY) */
-  db.ref("timerEnd").on("value", snap => {
+  /* Timer (read only) */
+  db.ref("timerEnd").on("value",snap=>{
     clearInterval(timerInterval);
-    if(!snap.val()) {
-      document.getElementById("timer").innerText="";
-      return;
-    }
+    if(!snap.val()){document.getElementById("timer").innerText="";return;}
 
-    timerInterval = setInterval(()=>{
-      const left = Math.max(0, Math.ceil((snap.val() - Date.now())/1000));
-      document.getElementById("timer").innerText =
-        left>0 ? "⏱ "+left+"s" : "";
+    timerInterval=setInterval(()=>{
+      const left=Math.max(0,Math.ceil((snap.val()-Date.now())/1000));
+      document.getElementById("timer").innerText=
+        left>0?"⏱ "+left+"s":"";
 
-      // 🔥 Only host triggers timeout ONCE
       if(left<=0){
         clearInterval(timerInterval);
-        db.ref("ramaChoice").transaction(v => v ? v : "TIMEOUT");
+        db.ref("ramaChoice").transaction(v=>v||"TIMEOUT");
       }
     },500);
   });
 
-  /* Result */
-  db.ref("ramaChoice").on("value", snap => {
-    const choice = snap.val();
+  /* Result + cumulative scoring */
+  db.ref("ramaChoice").on("value",snap=>{
+    const choice=snap.val();
     if(!choice) return;
 
-    db.ref("players").once("value", psnap => {
-      const players = psnap.val();
-      const correct = choice!=="TIMEOUT" && players[choice].role==="sita";
+    db.ref("players").once("value",ps=>{
+      const players=ps.val();
+      const correct=choice!=="TIMEOUT" && players[choice].role==="sita";
 
       for(let id in players){
-        let score = 0;
-        const role = players[id].role;
+        const role=players[id].role;
+        let add=0;
 
-        if(role==="rama") score = correct ? 1000 : 0;
-        else if(role==="sita") score = correct ? 0 : 1000;
+        if(role==="rama") add=correct?1000:0;
+        else if(role==="sita") add=correct?0:1000;
         else{
-          const r = roles.find(x=>x.name===role);
-          score = r ? r.score : 0;
+          const r=roles.find(x=>x.name===role);
+          add=r?r.score:0;
         }
 
-        db.ref("players/"+id+"/score").set(score);
+        // 🔥 ADD score, don’t replace
+        db.ref("players/"+id+"/score")
+          .transaction(s=>(s||0)+add);
       }
 
       db.ref("status").set(
-        correct ? "🏹 Rama found Sita!" : "🌸 Rama failed!"
+        correct?"🏹 Rama found Sita!":"🌸 Rama failed!"
       );
 
       db.ref("timerEnd").remove();
@@ -238,12 +241,12 @@ function listen(){
     });
   });
 
-  db.ref("status").on("value", s=>{
+  db.ref("status").on("value",s=>{
     if(s.val()) document.getElementById("status").innerText=s.val();
   });
 }
 
-/* Rama UI */
+/* Rama Panel */
 function showRamaPanel(players){
   const panel=document.getElementById("ramaPanel");
   const list=document.getElementById("playerList");
