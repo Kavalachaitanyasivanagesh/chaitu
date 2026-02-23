@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
   <style>
     body{font-family:Arial;text-align:center;background:#ffe6cc}
@@ -39,6 +40,17 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+  const auth = firebase.auth();
+let uid = "";
+
+auth.signInAnonymously()
+  .then(result => {
+    uid = result.user.uid;
+    console.log("Player logged in:", uid);
+  })
+  .catch(err => {
+    alert("Auth error: " + err.message);
+  });
 
 let playerName="";
 let role="";
@@ -50,13 +62,16 @@ function joinGame(){
   document.getElementById("game").style.display="block";
   document.getElementById("status").innerText="Waiting for players...";
 
-  db.ref("players/"+playerName).set({score:0});
+  db.ref("players/"+uid).set({
+  name: playerName,
+  score: 0
+});
   listen();
 }
 
 function choose(r){
   role=r;
-  db.ref("round/"+playerName).set(role);
+  db.ref("round/"+uid).set(role);
 }
 
 function listen(){
@@ -64,7 +79,8 @@ function listen(){
     const data=snap.val();
     if(!data) return;
 
-    const roles=Object.values(data);
+    let rama = Object.keys(data).find(k => data[k] == "rama");
+    let sita = Object.keys(data).find(k => data[k] == "sita");
 
     if(roles.includes("rama") && roles.includes("sita")){
       let rama=Object.keys(data).find(k=>data[k]=="rama");
@@ -88,7 +104,7 @@ function listen(){
     const data=snap.val();
     let txt="🏆 Scores<br>";
     for(let p in data){
-      txt+=p+" : "+data[p].score+"<br>";
+      txt += data[p].name + " : " + data[p].score + "<br>";
     }
     document.getElementById("score").innerHTML=txt;
   });
