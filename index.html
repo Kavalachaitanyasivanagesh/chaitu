@@ -3,6 +3,7 @@
 <head>
   <title>Ramudu Sita Online Game</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
+
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -29,7 +30,7 @@
 </div>
 
 <script>
-/* 🔴 PASTE YOUR FIREBASE CONFIG HERE */
+/* 🔴 REPLACE WITH YOUR REAL FIREBASE CONFIG */
 const firebaseConfig = {
   apiKey: "PASTE",
   authDomain: "PASTE",
@@ -40,73 +41,85 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
-  const auth = firebase.auth();
-let uid = "";
+const auth = firebase.auth();
 
+let uid = "";
+let playerName = "";
+let role = "";
+
+/* ✅ Anonymous login */
 auth.signInAnonymously()
   .then(result => {
     uid = result.user.uid;
-    console.log("Player logged in:", uid);
+    console.log("Logged in:", uid);
   })
-  .catch(err => {
-    alert("Auth error: " + err.message);
+  .catch(err => alert(err.message));
+
+/* ✅ Join game */
+function joinGame(){
+  if(uid === ""){
+    alert("Please wait… connecting");
+    return;
+  }
+
+  playerName = document.getElementById("name").value;
+  if(!playerName){
+    alert("Enter name");
+    return;
+  }
+
+  document.getElementById("game").style.display = "block";
+  document.getElementById("status").innerText = "Waiting for players...";
+
+  db.ref("players/" + uid).set({
+    name: playerName,
+    score: 0
   });
 
-let playerName="";
-let role="";
-
-function joinGame(){
-  playerName=document.getElementById("name").value;
-  if(!playerName) return alert("Enter name");
-
-  document.getElementById("game").style.display="block";
-  document.getElementById("status").innerText="Waiting for players...";
-
-  db.ref("players/"+uid).set({
-  name: playerName,
-  score: 0
-});
   listen();
 }
 
+/* ✅ Choose role */
 function choose(r){
-  role=r;
-  db.ref("round/"+uid).set(role);
+  role = r;
+  db.ref("round/" + uid).set(role);
 }
 
+/* ✅ Game logic */
 function listen(){
-  db.ref("round").on("value",snap=>{
-    const data=snap.val();
+  db.ref("round").on("value", snap => {
+    const data = snap.val();
     if(!data) return;
 
-    let rama = Object.keys(data).find(k => data[k] == "rama");
-    let sita = Object.keys(data).find(k => data[k] == "sita");
+    const roles = Object.values(data);
 
     if(roles.includes("rama") && roles.includes("sita")){
-      let rama=Object.keys(data).find(k=>data[k]=="rama");
-      let sita=Object.keys(data).find(k=>data[k]=="sita");
+      const ramaUid = Object.keys(data).find(k => data[k] === "rama");
+      const sitaUid = Object.keys(data).find(k => data[k] === "sita");
 
-      let winner=Math.random()>0.5?"rama":"sita";
+      const winner = Math.random() > 0.5 ? "rama" : "sita";
 
-      if(winner=="rama"){
-        db.ref("players/"+rama+"/score").transaction(s=>(s||0)+1000);
-        document.getElementById("status").innerText="🏹 Rama found Sita!";
-      }else{
-        db.ref("players/"+sita+"/score").transaction(s=>(s||0)+1000);
-        document.getElementById("status").innerText="🌸 Sita escaped!";
+      if(winner === "rama"){
+        db.ref("players/" + ramaUid + "/score")
+          .transaction(s => (s || 0) + 1000);
+        document.getElementById("status").innerText = "🏹 Rama found Sita!";
+      } else {
+        db.ref("players/" + sitaUid + "/score")
+          .transaction(s => (s || 0) + 1000);
+        document.getElementById("status").innerText = "🌸 Sita escaped!";
       }
 
       db.ref("round").remove();
     }
   });
 
-  db.ref("players").on("value",snap=>{
-    const data=snap.val();
-    let txt="🏆 Scores<br>";
+  db.ref("players").on("value", snap => {
+    const data = snap.val();
+    let txt = "🏆 Scores<br>";
     for(let p in data){
       txt += data[p].name + " : " + data[p].score + "<br>";
     }
-    document.getElementById("score").innerHTML=txt;
+    document.getElementById("score").innerHTML = txt;
   });
 }
 </script>
