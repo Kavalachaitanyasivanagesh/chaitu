@@ -4,6 +4,7 @@
   <title>Ramudu–Sita Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -38,14 +39,10 @@
       border:none;
       margin-top:8px;
     }
-    button{
-      background:#ff9800;
-      color:#000;
-      font-weight:600;
-      cursor:pointer;
-    }
+    button{background:#ff9800;color:#000;font-weight:600;}
     button.secondary{background:#333;color:#fff;}
     button.danger{background:#c62828;color:#fff;}
+    button:disabled{opacity:.4}
     #game{display:none;}
     .status{text-align:center;color:#aaa;}
     .role{text-align:center;font-size:20px;font-weight:700;}
@@ -71,14 +68,16 @@
     <div class="role" id="myrole"></div>
     <div class="timer" id="timer"></div>
 
-    <!-- ANYONE can start -->
-    <button onclick="startGame()">Start Game</button>
-    <button class="secondary" onclick="resetAllPlayers()">Reset All</button>
+    <!-- HOST CONTROLS -->
+    <button id="startBtn" onclick="startGame()" disabled>Start Game (Host)</button>
+
+    <!-- PLAYER READY -->
+    <button id="readyBtn" class="secondary" onclick="setReady()">READY</button>
   </div>
 
   <div class="card" id="ramaPanel" style="display:none">
-    <h3>Select Sita (ONE TIME)</h3>
-    <div class="player-list" id="playerList"></div>
+    <h3>Select Sita</h3>
+    <div id="playerList"></div>
   </div>
 
   <div class="card">
@@ -91,6 +90,7 @@
 </div>
 
 <script>
+/* Firebase */
 const firebaseConfig = {
   apiKey: "AIzaSyAgW8uCRYRt9vQR59tcZKPZ5frkIdUtzIA",
   authDomain: "ramudu-game.firebaseapp.com",
@@ -100,13 +100,13 @@ const firebaseConfig = {
   messagingSenderId: "1024983133761",
   appId: "1:1024983133761:web:bd97cd6a42b09daad260c0"
 };
-
 firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-const auth = firebase.auth();
+const db=firebase.database();
+const auth=firebase.auth();
 
 let uid="", timerInt=null, selectionLocked=false;
 
+/* Role order */
 const roleOrder=[
  {name:"rama",score:0},
  {name:"sita",score:0},
@@ -121,31 +121,60 @@ const roleOrder=[
 
 auth.signInAnonymously().then(r=>uid=r.user.uid);
 
+/* Join */
 function joinGame(){
   const name=document.getElementById("name").value.trim();
   if(!name) return alert("Enter name");
-  db.ref("players/"+uid).set({name,role:"",score:0});
+
+  db.ref("players/"+uid).set({
+    name,
+    role:"",
+    score:0,
+    ready:false
+  });
+
   document.getElementById("game").style.display="block";
   listen();
 }
 
+/* Ready */
+function setReady(){
+  db.ref("players/"+uid+"/ready").set(true);
+  document.getElementById("readyBtn").disabled=true;
+}
+
+/* Start (HOST ONLY) */
 function startGame(){
-  selectionLocked=false;
-  db.ref("players").once("value",snap=>{
-    const p=snap.val();
-    const ids=Object.keys(p||{});
-    if(ids.length<4) return alert("Minimum 4 players required");
+  db.ref("host").once("value",snap=>{
+    if(snap.val()!==uid) return alert("Only host can start");
 
-    ids.forEach((id,i)=>{
-      const r=roleOrder[i]||roleOrder[roleOrder.length-1];
-      db.ref("players/"+id+"/role").set(r.name);
+    db.ref("gameStarted").once("value",s=>{
+      if(s.val()) return;
+
+      db.ref("players").once("value",ps=>{
+        const p=ps.val();
+        const ids=Object.keys(p||{});
+        if(ids.length<4) return alert("Minimum 4 players");
+
+        const allReady=ids.every(id=>p[id].ready||id===uid);
+        if(!allReady) return alert("All players not ready");
+
+        db.ref("gameStarted").set(true);
+
+        ids.forEach((id,i)=>{
+          const r=roleOrder[i]||roleOrder[roleOrder.length-1];
+          db.ref("players/"+id+"/role").set(r.name);
+          db.ref("players/"+id+"/ready").set(false);
+        });
+
+        db.ref("status").set("Roles assigned. Rama choose Sita!");
+        startTimer();
+      });
     });
-
-    db.ref("status").set("Roles assigned. Rama, choose Sita!");
-    startTimer();
   });
 }
 
+/* Timer */
 function startTimer(){
   let t=20;
   db.ref("timer").set(t);
@@ -160,11 +189,12 @@ function startTimer(){
   },1000);
 }
 
+/* Rama select */
 function selectSita(id){
   if(selectionLocked) return;
-  lockSelection();               // ✅ STOP further clicks
-  clearInterval(timerInt);       // ✅ STOP timer immediately
-  db.ref("timer").remove();      // ✅ REMOVE timer from DB
+  lockSelection();
+  clearInterval(timerInt);
+  db.ref("timer").remove();
   db.ref("ramaChoice").set(id);
 }
 
@@ -173,49 +203,56 @@ function lockSelection(){
   document.getElementById("ramaPanel").style.display="none";
 }
 
+/* Leave */
 function leaveGame(){
   db.ref("players/"+uid).remove();
   location.reload();
 }
 
-function resetAllPlayers(){
-  if(confirm("Reset all players?")){
-    db.ref().remove();
-    location.reload();
-  }
-}
-
+/* Listen */
 function listen(){
   db.ref("players").on("value",snap=>{
     const p=snap.val();
     if(!p||!p[uid])return;
 
-    document.getElementById("myrole").innerText="You are: "+p[uid].role.toUpperCase();
+    /* Assign host (first player) */
+    const ids=Object.keys(p);
+    db.ref("host").set(ids[0]);
+
+    document.getElementById("myrole").innerText =
+      p[uid].role ? "You are: "+p[uid].role.toUpperCase() : "";
 
     let txt="";
-    for(let id in p){
-      txt+=`${p[id].name} : ${p[id].score}<br>`;
-    }
+    ids.forEach(id=>{
+      txt+=`${p[id].name} ${p[id].ready?"✅":""} : ${p[id].score}<br>`;
+    });
     document.getElementById("score").innerHTML=txt;
 
-    if(p[uid].role==="rama" && !selectionLocked){
-      const panel=document.getElementById("ramaPanel");
-      const list=document.getElementById("playerList");
-      panel.style.display="block";
-      list.innerHTML="";
+    /* Host enable start */
+    if(ids[0]===uid){
+      const allReady=ids.every(id=>p[id].ready||id===uid);
+      document.getElementById("startBtn").disabled=!allReady;
+    }else{
+      document.getElementById("startBtn").style.display="none";
+    }
 
-      for(let id in p){
-        if(id===uid) continue;
+    /* Rama panel */
+    if(p[uid].role==="rama" && !selectionLocked){
+      const list=document.getElementById("playerList");
+      list.innerHTML="";
+      document.getElementById("ramaPanel").style.display="block";
+      ids.forEach(id=>{
+        if(id===uid) return;
         const b=document.createElement("button");
         b.innerText=p[id].name;
         b.onclick=()=>selectSita(id);
         list.appendChild(b);
-      }
+      });
     }
   });
 
   db.ref("timer").on("value",s=>{
-    document.getElementById("timer").innerText=
+    document.getElementById("timer").innerText =
       s.val()!=null?`⏱ ${s.val()}s left`:"";
   });
 
@@ -240,6 +277,7 @@ function listen(){
 
       db.ref("status").set(correct?"🏹 Rama found Sita!":"🌸 Rama failed!");
       db.ref("ramaChoice").remove();
+      db.ref("gameStarted").remove();
     });
   });
 
