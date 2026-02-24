@@ -30,7 +30,7 @@
 <h2 style="text-align:center">🎮 Ramudu–Sita Game</h2>
 
 <div class="card">
-  <input id="name" placeholder="Enter your name">
+  <input id="name" placeholder="NI PERU CHEPU">
   <button onclick="joinGame()">Join Game</button>
 </div>
 
@@ -56,8 +56,6 @@
   <div class="card">
     <div id="score"></div>
   </div>
-
-  <button class="danger" onclick="leaveGame()">Leave Game</button>
 
 </div>
 </div>
@@ -93,7 +91,12 @@ function joinGame(){
   const name=document.getElementById("name").value.trim();
   if(!name) return alert("Enter name");
 
-  db.ref("players/"+uid).set({name,role:"",score:0,ready:false});
+  const playerRef=db.ref("players/"+uid);
+  playerRef.set({name,role:"",score:0,ready:false});
+
+  // Auto remove player on disconnect
+  playerRef.onDisconnect().remove();
+
   document.getElementById("game").style.display="block";
   listen();
 }
@@ -152,14 +155,12 @@ function nextGame(){
     db.ref("ramaChoice").remove();
     db.ref("timer").remove();
     db.ref("status").set("Next round. Players click READY");
-
     db.ref("players").once("value",ps=>{
       const p=ps.val();
       for(let id in p){
         db.ref("players/"+id).update({role:"",ready:false});
       }
     });
-
     document.getElementById("nextBtn").style.display="none";
   });
 }
@@ -167,21 +168,23 @@ function nextGame(){
 function resetAll(){
   db.ref("host").once("value",h=>{
     if(h.val()!==uid) return;
-    if(confirm("Reset all players?")){
-      db.ref().remove(); location.reload();
-    }
+    db.ref().remove();
+    location.reload();
   });
-}
-
-function leaveGame(){
-  db.ref("players/"+uid).remove(); location.reload();
 }
 
 function listen(){
   db.ref("players").on("value",snap=>{
     const p=snap.val(); if(!p||!p[uid])return;
-    const ids=Object.keys(p), hostUid=ids[0];
+    const ids=Object.keys(p);
+    const hostUid=ids[0];
     db.ref("host").set(hostUid);
+
+    // 🔥 HOST DISCONNECT = RESET ALL
+    if(hostUid===uid){
+      db.ref("host").onDisconnect().remove();
+      db.ref().onDisconnect().remove();
+    }
 
     document.getElementById("myrole").innerText =
       p[uid].role ? "You are: "+p[uid].role.toUpperCase() : "";
@@ -197,7 +200,7 @@ function listen(){
       document.getElementById("startBtn").disabled=!allReady;
     }else{
       document.getElementById("readyBtn").style.display="block";
-      document.getElementById("readyBtn").disabled = p[uid].ready === true;
+      document.getElementById("readyBtn").disabled=p[uid].ready===true;
       document.getElementById("startBtn").style.display="none";
       document.getElementById("resetAllBtn").style.display="none";
     }
