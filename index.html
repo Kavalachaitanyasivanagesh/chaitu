@@ -30,7 +30,7 @@
 <h2 style="text-align:center">🎮 Ramudu–Sita Game</h2>
 
 <div class="card">
-  <input id="name" placeholder="NI PERU CHEPU">
+  <input id="name" placeholder="Enter your name">
   <button onclick="joinGame()">Join Game</button>
 </div>
 
@@ -78,24 +78,35 @@ const auth=firebase.auth();
 let uid="",timerInt=null,selectionLocked=false;
 
 const roleOrder=[
- {name:"rama",score:0},{name:"sita",score:0},
- {name:"lakshmana",score:900},{name:"hanuman",score:800},
- {name:"baratha",score:700},{name:"satrugunudu",score:600},
- {name:"jambavanta",score:500},{name:"sugrivudu",score:400},
- {name:"vali",score:300}
+ "rama","sita",
+ "lakshmana","hanuman","baratha",
+ "satrugunudu","jambavanta","sugrivudu","vali"
 ];
 
+const roleScore={
+ rama:0,sita:0,
+ lakshmana:900,hanuman:800,baratha:700,
+ satrugunudu:600,jambavanta:500,sugrivudu:400,vali:300
+};
+
 auth.signInAnonymously().then(r=>uid=r.user.uid);
+
+/* 🔀 SHUFFLE FUNCTION */
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+  return arr;
+}
 
 function joinGame(){
   const name=document.getElementById("name").value.trim();
   if(!name) return alert("Enter name");
 
-  const playerRef=db.ref("players/"+uid);
-  playerRef.set({name,role:"",score:0,ready:false});
-
-  // Auto remove player on disconnect
-  playerRef.onDisconnect().remove();
+  const ref=db.ref("players/"+uid);
+  ref.set({name,role:"",score:0,ready:false});
+  ref.onDisconnect().remove();
 
   document.getElementById("game").style.display="block";
   listen();
@@ -110,16 +121,21 @@ function startGame(){
     if(h.val()!==uid) return;
 
     db.ref("players").once("value",ps=>{
-      const p=ps.val(),ids=Object.keys(p||{});
+      let players=ps.val();
+      let ids=Object.keys(players||{});
       if(ids.length<4) return alert("Min 4 players");
 
-      const allReady=ids.every(id=>p[id].ready||id===uid);
+      const allReady=ids.every(id=>players[id].ready||id===uid);
       if(!allReady) return alert("All players not ready");
 
       selectionLocked=false;
+      document.getElementById("ramaPanel").style.display="none";
+
+      ids = shuffle(ids); // 🔥 THIS IS THE FIX
+
       ids.forEach((id,i)=>{
-        const r=roleOrder[i]||roleOrder[roleOrder.length-1];
-        db.ref("players/"+id).update({role:r.name,ready:false});
+        const role=roleOrder[i]||"vali";
+        db.ref("players/"+id).update({role,ready:false});
       });
 
       db.ref("status").set("Roles assigned. Rama choose Sita!");
@@ -152,15 +168,18 @@ function selectSita(id){
 function nextGame(){
   db.ref("host").once("value",h=>{
     if(h.val()!==uid) return;
+
     db.ref("ramaChoice").remove();
     db.ref("timer").remove();
     db.ref("status").set("Next round. Players click READY");
+
     db.ref("players").once("value",ps=>{
       const p=ps.val();
       for(let id in p){
         db.ref("players/"+id).update({role:"",ready:false});
       }
     });
+
     document.getElementById("nextBtn").style.display="none";
   });
 }
@@ -168,21 +187,17 @@ function nextGame(){
 function resetAll(){
   db.ref("host").once("value",h=>{
     if(h.val()!==uid) return;
-    db.ref().remove();
-    location.reload();
+    db.ref().remove(); location.reload();
   });
 }
 
 function listen(){
   db.ref("players").on("value",snap=>{
     const p=snap.val(); if(!p||!p[uid])return;
-    const ids=Object.keys(p);
-    const hostUid=ids[0];
+    const ids=Object.keys(p), hostUid=ids[0];
     db.ref("host").set(hostUid);
 
-    // 🔥 HOST DISCONNECT = RESET ALL
     if(hostUid===uid){
-      db.ref("host").onDisconnect().remove();
       db.ref().onDisconnect().remove();
     }
 
@@ -200,7 +215,7 @@ function listen(){
       document.getElementById("startBtn").disabled=!allReady;
     }else{
       document.getElementById("readyBtn").style.display="block";
-      document.getElementById("readyBtn").disabled=p[uid].ready===true;
+      document.getElementById("readyBtn").disabled=p[uid].ready;
       document.getElementById("startBtn").style.display="none";
       document.getElementById("resetAllBtn").style.display="none";
     }
@@ -230,7 +245,7 @@ function listen(){
         let add=0;
         if(p[id].role==="rama") add=correct?1000:0;
         else if(p[id].role==="sita") add=correct?0:1000;
-        else add=roleOrder.find(r=>r.name===p[id].role).score;
+        else add=roleScore[p[id].role];
         db.ref("players/"+id+"/score").set((p[id].score||0)+add);
       }
       db.ref("status").set(correct?"🏹 Rama found Sita!":"🌸 Rama failed!");
