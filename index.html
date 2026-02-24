@@ -68,13 +68,16 @@
     <div class="role" id="myrole"></div>
     <div class="timer" id="timer"></div>
 
-    <!-- Host controls -->
+    <!-- HOST CONTROLS -->
     <button id="startBtn" onclick="startGame()" disabled>Start Game (Host)</button>
     <button id="nextBtn" class="secondary" onclick="nextGame()" style="display:none">
       Next Game
     </button>
+    <button id="resetAllBtn" class="danger" onclick="resetAll()" style="display:none">
+      Reset ALL (Host)
+    </button>
 
-    <!-- Ready for players -->
+    <!-- PLAYER READY -->
     <button id="readyBtn" class="secondary" onclick="setReady()">READY</button>
   </div>
 
@@ -110,7 +113,7 @@ const auth = firebase.auth();
 
 let uid="", timerInt=null, selectionLocked=false;
 
-/* Role order & scores */
+/* Role order */
 const roleOrder=[
  {name:"rama",score:0},
  {name:"sita",score:0},
@@ -125,7 +128,7 @@ const roleOrder=[
 
 auth.signInAnonymously().then(r=>uid=r.user.uid);
 
-/* Join game */
+/* Join */
 function joinGame(){
   const name=document.getElementById("name").value.trim();
   if(!name) return alert("Enter name");
@@ -147,7 +150,7 @@ function setReady(){
   document.getElementById("readyBtn").disabled=true;
 }
 
-/* Start game (host only) */
+/* Start Game (host only) */
 function startGame(){
   db.ref("host").once("value",h=>{
     if(h.val()!==uid) return alert("Only host can start");
@@ -181,7 +184,7 @@ function startGame(){
   });
 }
 
-/* Rama timer */
+/* Timer */
 function startTimer(){
   let t=20;
   db.ref("timer").set(t);
@@ -196,7 +199,7 @@ function startTimer(){
   },1000);
 }
 
-/* Rama selects */
+/* Rama select */
 function selectSita(id){
   if(selectionLocked) return;
   lockSelection();
@@ -210,10 +213,10 @@ function lockSelection(){
   document.getElementById("ramaPanel").style.display="none";
 }
 
-/* Next Game (host only) */
+/* Next Game */
 function nextGame(){
   db.ref("host").once("value",h=>{
-    if(h.val()!==uid) return alert("Only host can start next game");
+    if(h.val()!==uid) return alert("Only host");
 
     db.ref("ramaChoice").remove();
     db.ref("timer").remove();
@@ -236,6 +239,16 @@ function nextGame(){
   });
 }
 
+/* RESET ALL (HOST ONLY) */
+function resetAll(){
+  db.ref("host").once("value",h=>{
+    if(h.val()!==uid) return alert("Only host can reset all");
+    if(!confirm("Reset EVERYTHING and remove all players?")) return;
+    db.ref().remove();
+    location.reload();
+  });
+}
+
 /* Leave */
 function leaveGame(){
   db.ref("players/"+uid).remove();
@@ -250,7 +263,7 @@ function listen(){
 
     const ids=Object.keys(p);
 
-    /* Host = first player */
+    /* Assign host */
     db.ref("host").set(ids[0]);
 
     document.getElementById("myrole").innerText =
@@ -262,8 +275,9 @@ function listen(){
     });
     document.getElementById("score").innerHTML=txt;
 
-    /* Start button enable for host */
+    /* Host buttons */
     if(ids[0]===uid){
+      document.getElementById("resetAllBtn").style.display="block";
       const allReady=ids.every(id=>p[id].ready || id===uid);
       document.getElementById("startBtn").disabled=!allReady;
     }else{
@@ -275,7 +289,6 @@ function listen(){
       const list=document.getElementById("playerList");
       list.innerHTML="";
       document.getElementById("ramaPanel").style.display="block";
-
       ids.forEach(id=>{
         if(id===uid) return;
         const b=document.createElement("button");
@@ -313,7 +326,7 @@ function listen(){
       db.ref("status").set(correct?"🏹 Rama found Sita!":"🌸 Rama failed!");
       db.ref("gameStarted").remove();
 
-      /* Show Next Game button for host */
+      /* Show Next Game for host */
       db.ref("host").once("value",h=>{
         if(h.val()===uid){
           document.getElementById("nextBtn").style.display="block";
